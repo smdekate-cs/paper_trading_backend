@@ -88,3 +88,64 @@ def get_trade_history():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# Add to existing trades_bp
+
+@trades_bp.route('/performance/<user_id>', methods=['GET'])
+@jwt_required()
+def get_trade_performance(user_id):
+    try:
+        current_user_id = get_jwt_identity()
+        
+        # Users can only access their own performance
+        if user_id != current_user_id:
+            return jsonify({'error': 'Unauthorized access'}), 403
+        
+        portfolio = Portfolio.find_by_user_id(user_id)
+        if not portfolio:
+            return jsonify({'error': 'Portfolio not found'}), 404
+        
+        all_trades = Trade.find_all_trades_by_user(user_id)
+        active_trades = Trade.find_active_trades_by_user(user_id)
+        
+        # Calculate performance metrics
+        total_trades = len(all_trades)
+        active_trades_count = len(active_trades)
+        closed_trades_count = total_trades - active_trades_count
+        
+        # Calculate win rate
+        profitable_trades = [t for t in all_trades if t.pnl > 0 and t.status != TradeStatus.ACTIVE]
+        win_rate = (len(profitable_trades) / closed_trades_count * 100) if closed_trades_count > 0 else 0
+        
+        # Calculate total PnL
+        total_pnl = sum(trade.pnl for trade in all_trades)
+        active_pnl = sum(trade.pnl for trade in active_trades)
+        
+        # Calculate average trade metrics
+        avg_profit = sum(trade.pnl for trade in profitable_trades) / len(profitable_trades) if profitable_trades else 0
+        
+        return jsonify({
+            'performance': {
+                'portfolio_summary': portfolio.to_dict(),
+                'trade_statistics': {
+                    'total_trades': total_trades,
+                    'active_trades': active_trades_count,
+                    'closed_trades': closed_trades_count,
+                    'win_rate': round(win_rate, 2),
+                    'total_pnl': total_pnl,
+                    'active_pnl': active_pnl,
+                    'average_profit': round(avg_profit, 2),
+                    'profitable_trades': len(profitable_trades)
+                },
+                'margin_utilization': {
+                    'available_margin': portfolio.available_margin,
+                    'utilized_margin': portfolio.utilized_margin,
+                    'utilization_percentage': round(
+                        (portfolio.utilized_margin / (portfolio.available_margin + portfolio.utilized_margin)) * 100, 2
+                    ) if (portfolio.available_margin + portfolio.utilized_margin) > 0 else 0
+                }
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
