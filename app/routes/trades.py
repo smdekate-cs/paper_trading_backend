@@ -3,6 +3,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.trade import Trade, TradeType, TradeStatus
 from app.models.portfolio import Portfolio
 from app.services.market_data import market_data_service
+from app.services.notification_service import notification_service
+from app.models.user import User
 
 trades_bp = Blueprint('trades', __name__)
 
@@ -60,6 +62,16 @@ def create_trade():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+    user = User.find_by_client_id(current_user_id)
+    if user:
+        trade_dict = trade.to_dict()
+        notification_service.notify_trade_creation(
+            user.email, 
+            user.phone, 
+            trade_dict
+        )
+
 
 @trades_bp.route('/active', methods=['GET'])
 @jwt_required()
