@@ -37,4 +37,29 @@ def create_app():
     app.register_blueprint(trades_bp, url_prefix='/trades')
     app.register_blueprint(market_bp, url_prefix='/market')
     
+    # WebSocket events
+    @socketio.on('connect')
+    def handle_connect():
+        print('Client connected')
+        emit('connection_status', {'status': 'connected'})
+    
+    @socketio.on('disconnect')
+    def handle_disconnect():
+        print('Client disconnected')
+    
+    @socketio.on('subscribe_market_data')
+    def handle_subscribe_market_data(data):
+        symbol = data.get('symbol')
+        if symbol:
+            # In a real implementation, you'd add to a room
+            emit('market_data', {
+                'symbol': symbol,
+                'data': market_data_service.get_live_price(symbol)
+            })
+    
+    @socketio.on('unsubscribe_market_data')
+    def handle_unsubscribe_market_data(data):
+        symbol = data.get('symbol')
+        # Remove from room implementation
+    
     return app
