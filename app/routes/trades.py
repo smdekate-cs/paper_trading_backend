@@ -90,7 +90,6 @@ def get_trade_history():
         return jsonify({'error': str(e)}), 500
 
 # Add to existing trades_bp
-
 @trades_bp.route('/performance/<user_id>', methods=['GET'])
 @jwt_required()
 def get_trade_performance(user_id):
