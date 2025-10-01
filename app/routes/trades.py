@@ -89,7 +89,6 @@ def get_trade_history():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Add to existing trades_bp
 @trades_bp.route('/performance/<user_id>', methods=['GET'])
 @jwt_required()
 def get_trade_performance(user_id):
@@ -144,6 +143,91 @@ def get_trade_performance(user_id):
                     ) if (portfolio.available_margin + portfolio.utilized_margin) > 0 else 0
                 }
             }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@trades_bp.route('/exit/<trade_id>', methods=['POST'])
+@jwt_required()
+def exit_trade(trade_id):
+    try:
+        current_user_id = get_jwt_identity()
+        
+        trade = Trade.find_by_id(trade_id)
+        if not trade:
+            return jsonify({'error': 'Trade not found'}), 404
+        
+        # Check ownership
+        if trade.user_id != current_user_id:
+            return jsonify({'error': 'Unauthorized access'}), 403
+        
+        # Check if trade is already closed
+        if trade.status != TradeStatus.ACTIVE:
+            return jsonify({'error': 'Trade is already closed'}), 400
+        
+        # Get current market price
+        market_data = market_data_service.get_live_price(trade.symbol)
+        if not market_data:
+            return jsonify({'error': 'Failed to fetch market price'}), 500
+        
+        exit_price = market_data['price']
+        
+        # Close trade
+        trade.close_trade(exit_price, TradeStatus.CLOSED)
+        
+        # Update portfolio
+        portfolio = Portfolio.find_by_user_id(current_user_id)
+        if portfolio:
+            portfolio.update_margin(-trade.margin_used, trade.pnl)
+        
+        return jsonify({
+            'message': 'Trade exited successfully',
+            'trade': trade.to_dict()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@trades_bp.route('/exit-all/<user_id>', methods=['POST'])
+@jwt_required()
+def exit_all_trades(user_id):
+    try:
+        current_user_id = get_jwt_identity()
+        
+        # Check authorization
+        if user_id != current_user_id:
+            return jsonify({'error': 'Unauthorized access'}), 403
+        
+        active_trades = Trade.find_active_trades_by_user(user_id)
+        
+        if not active_trades:
+            return jsonify({'error': 'No active trades found'}), 404
+        
+        exited_trades = []
+        total_pnl = 0
+        total_margin_freed = 0
+        
+        for trade in active_trades:
+            # Get current market price
+            market_data = market_data_service.get_live_price(trade.symbol)
+            if market_data:
+                exit_price = market_data['price']
+                trade.close_trade(exit_price, TradeStatus.CLOSED)
+                exited_trades.append(trade.to_dict())
+                total_pnl += trade.pnl
+                total_margin_freed += trade.margin_used
+        
+        # Update portfolio
+        portfolio = Portfolio.find_by_user_id(user_id)
+        if portfolio:
+            portfolio.update_margin(-total_margin_freed, total_pnl)
+        
+        return jsonify({
+            'message': f'All {len(exited_trades)} trades exited successfully',
+            'exited_trades': exited_trades,
+            'total_pnl': total_pnl,
+            'margin_freed': total_margin_freed
         }), 200
         
     except Exception as e:
